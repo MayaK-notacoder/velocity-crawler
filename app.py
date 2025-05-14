@@ -1,11 +1,18 @@
-from fastapi import FastAPI, HTTPException
-from crawler import crawl   # your async crawl(root, max_pages=200)
+from fastapi import FastAPI, HTTPException, Query
+from crawler import crawl
+import validators
+import asyncio
 
 app = FastAPI()
 
-@app.get("/crawl")
-async def crawl_endpoint(url: str):
+@app.get("/crawl", summary="Crawl a site for PDF/HTML5 counts")
+async def crawl_endpoint(url: str = Query(..., description="Root website URL")):
+    if not validators.url(url):
+        raise HTTPException(status_code=400, detail="Invalid URL")
     try:
-        return await crawl(url)
+        # run the async crawl with a timeout of 60 s
+        return await asyncio.wait_for(crawl(url, max_pages=200), timeout=60)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Crawl timed out")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
