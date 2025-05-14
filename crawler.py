@@ -1,52 +1,71 @@
-[
-  {
-    "situation": "The company is expanding into new markets or regions.",
-    "value_prop": "Foleon enables centralized brand governance and scalable content creation across geographies.",
-    "signals": [
-      "Mentions of geographic expansion",
-      "Regional marketing or comms teams",
-      "Hiring in international locations"
-    ],
-    "industries": ["Professional Services", "SaaS", "Real Estate"]
-  },
-  {
-    "situation": "The company is scaling content production or dealing with internal bottlenecks.",
-    "value_prop": "Foleon speeds up content production with reusable templates and controlled personalization, reducing pressure on design teams.",
-    "signals": [
-      "Overworked creative teams",
-      "Mentions of long review cycles",
-      "Hiring content ops or brand enablement roles"
-    ],
-    "industries": ["Consulting", "Tech", "Higher Ed", "Industrial Services"]
-  },
-  {
-    "situation": "The company operates in a regulated industry or emphasizes compliance.",
-    "value_prop": "Foleon provides governance and permission controls to reduce compliance risk in content publishing.",
-    "signals": [
-      "References to compliance, GDPR, legal disclaimers",
-      "Regulated industry (e.g., finance, health, insurance)",
-      "Hiring risk/legal/compliance roles"
-    ],
-    "industries": ["Finance", "Healthcare", "Insurance", "Government"]
-  },
-  {
-    "situation": "The company is investing in personalized marketing or account-based content.",
-    "value_prop": "Foleon enables rapid personalization at scale with controlled templates that reduce SME and design time.",
-    "signals": [
-      "ABM initiatives",
-      "Hiring for personalization or campaign managers",
-      "Launching segmented campaigns or microsites"
-    ],
-    "industries": ["SaaS", "Professional Services", "B2B"]
-  },
-  {
-    "situation": "The company is undergoing digital transformation or CMS migration.",
-    "value_prop": "Foleon serves as a flexible, modern platform that complements or replaces legacy CMS systems for publishing controlled content.",
-    "signals": [
-      "Mentions of digital transformation",
-      "CMS/platform dissatisfaction",
-      "Evaluating new martech"
-    ],
-    "industries": ["All — but especially large, multi-department orgs"]
-  }
-]
+"""
+Given a root URL, crawl up to max_pages pages
+– Count PDFs and HTML5 flipbooks
+– Flag partner / reseller portals
+– Detect tool names inside URLs (Ceros, Turtl, Uberflip, Issuu, etc.)
+Return a JSON summary.
+"""
+import asyncio, re, aiohttp
+from urllib.parse import urljoin, urlparse
+from bs4 import BeautifulSoup
+
+TOOL_PATTERNS = re.compile(r"(ceros|turtl|uberflip|issuu|storyblok)", re.I)
+HTML5_HINTS   = re.compile(r"(/story/|/flipbook/|pubhtml5|/view/)", re.I)
+
+async def fetch(session, url, timeout=10):
+    try:
+        async with session.get(url, timeout=timeout) as r:
+            if "text/html" in r.headers.get("content-type",""):
+                return await r.text()
+    except Exception:
+        pass
+    return ""
+
+async def crawl(root:str, max_pages:int=200, depth:int=2):
+    root = root.rstrip("/")
+    domain = urlparse(root).netloc
+    seen, queue = set([root]), [root]
+    pdfs, html5, tools, partner_portal = [], [], set(), False
+
+    async with aiohttp.ClientSession() as session:
+        while queue and len(seen) < max_pages:
+            url = queue.pop(0)
+            html = await fetch(session, url)
+            if not html: continue
+            soup = BeautifulSoup(html, "html.parser")
+
+            # collect links
+            for a in soup.find_all("a", href=True):
+                href = a["href"].split("#")[0]
+                if href.startswith("//"): href = "https:" + href
+                if href.startswith("/"):  href = urljoin(root, href)
+
+                if not urlparse(href).netloc.endswith(domain): continue
+                if href in seen: continue
+
+                # classify
+                if href.endswith(".pdf"):
+                    pdfs.append(href)
+                elif HTML5_HINTS.search(href):
+                    html5.append(href)
+                if TOOL_PATTERNS.search(href):
+                    tools.add( TOOL_PATTERNS.search(href).group(1).lower() )
+                if re.search(r"/partners|/resellers|/channel", href, re.I):
+                    partner_portal = True
+
+                # BFS queue
+                if depth and len(seen) < max_pages and href.endswith((".pdf",".zip",".docx")) is False:
+                    queue.append(href)
+                seen.add(href)
+
+    return {
+        "pdf_count": len(pdfs),
+        "html5_like_count": len(html5),
+        "sample_pdfs": pdfs[:5],
+        "sample_html5": html5[:5],
+        "tools_detected": sorted(tools),
+        "partner_portal": partner_portal
+    }
+
+# Example (async entry point)
+# asyncio.run(crawl("https://example.com"))
