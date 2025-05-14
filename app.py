@@ -11,7 +11,8 @@ async def crawl_endpoint(url: str = Query(..., description="Root website URL")):
         raise HTTPException(status_code=400, detail="Invalid URL")
     try:
         # 90-second overall timeout
-        return await asyncio.wait_for(crawl(url, max_pages=400, depth=4), timeout=90)
+        # smaller crawl for faster completion
+return await asyncio.wait_for(crawl(url, max_pages=150, depth=3), timeout=60)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Crawl timed out")
     except Exception as e:
