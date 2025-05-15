@@ -1,42 +1,16 @@
 from fastapi import FastAPI, HTTPException, Query
 from crawler import crawl
-import validators
-import asyncio
-from classifier import extract_first_page_text
+import validators, asyncio
 
 app = FastAPI()
 
 @app.get("/crawl", summary="Crawl a site for PDF/HTML5 counts")
-async def crawl_endpoint(
-    url: str = Query(..., description="Root website URL"),
-):
-    # simple URL check
+async def crawl_endpoint(url: str = Query(..., description="Root website URL")):
     if not validators.url(url):
         raise HTTPException(status_code=400, detail="Invalid URL")
-
     try:
-        # run crawl with smaller limits (150 pages, 3 levels) and 60-second timeout
-        result = await asyncio.wait_for(
-            crawl(url, max_pages=150, depth=3),
-            timeout=60
-        )
-        return result
-
+        return await asyncio.wait_for(crawl(url, max_pages=150, depth=3), timeout=60)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Crawl timed out")
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/classify", summary="Fetch first-page text of a PDF")
-async def classify_endpoint(
-    url: str = Query(..., description="Direct PDF URL")
-):
-    text = extract_first_page_text(url)
-    return {
-        "filename": url.split("/")[-1],
-        "first_page_text": text[:2000],   # keep it short
-        "pages": None                     # we ignore page count for now
-    }
-
