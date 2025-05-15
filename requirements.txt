@@ -3,5 +3,3 @@ uvicorn[standard]
 aiohttp
 beautifulsoup4
 validators
-pdfminer.six
-requests
