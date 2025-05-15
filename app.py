@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Query
 from crawler import crawl
 import validators
 import asyncio
+from classifier import classify_pdf
 
 app = FastAPI()
 
@@ -26,3 +27,12 @@ async def crawl_endpoint(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/classify", summary="Classify a single PDF link")
+async def classify_endpoint(
+    url: str = Query(..., description="Direct PDF URL")
+):
+    # Runs the simple keyword classifier
+    kind, conf = classify_pdf(url)
+    return {"content_type": kind, "confidence": round(conf, 2)}
