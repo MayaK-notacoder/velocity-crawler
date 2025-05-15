@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Query
 from crawler import crawl
 import validators
 import asyncio
-from classifier import classify_pdf
+from classifier import extract_first_page_text
 
 app = FastAPI()
 
@@ -29,10 +29,14 @@ async def crawl_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/classify", summary="Classify a single PDF link")
+@app.get("/classify", summary="Fetch first-page text of a PDF")
 async def classify_endpoint(
     url: str = Query(..., description="Direct PDF URL")
 ):
-    # Runs the simple keyword classifier
-    kind, conf = classify_pdf(url)
-    return {"content_type": kind, "confidence": round(conf, 2)}
+    text = extract_first_page_text(url)
+    return {
+        "filename": url.split("/")[-1],
+        "first_page_text": text[:2000],   # keep it short
+        "pages": None                     # we ignore page count for now
+    }
+
