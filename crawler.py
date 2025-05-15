@@ -1,13 +1,8 @@
 """
-Content-Velocity crawler for Foleon.
-
-Visits up to `max_pages` pages within `depth` link levels and returns:
-    • pdf_count              – how many .pdf links found
-    • html5_like_count       – flipbook/HTML5 asset hints
-    • tools_detected         – ['ceros', 'turtl', ...] in URLs
-    • partner_portal         – True if /partners|/resellers|/channel path found
-    • sample_pdfs            – first 5 PDF links
-    • sample_html5           – first 5 HTML5 links
+Velocity crawler
+– Crawls up to 150 pages, 3 levels deep (breadth-first)
+– Counts PDFs & HTML5-style links
+– Returns ALL PDF links (no 5-item cap)
 """
 
 import asyncio, re, aiohttp
@@ -16,7 +11,7 @@ from bs4 import BeautifulSoup
 
 TOOL_PATTERNS = re.compile(r"(ceros|turtl|uberflip|issuu|storyblok)", re.I)
 HTML5_HINTS   = re.compile(r"(/story/|/flipbook/|pubhtml5|/view/)", re.I)
-PDF_REGEX     = re.compile(r"\.pdf($|\?)", re.I)     # case-insensitive, allows query
+PDF_REGEX     = re.compile(r"\.pdf($|\?)", re.I)
 
 async def _fetch(session, url, timeout=10):
     try:
@@ -40,18 +35,17 @@ async def crawl(root: str, max_pages:int = 150, depth:int = 3):
     async with aiohttp.ClientSession() as session:
         while queue and len(seen) < max_pages and current_depth <= depth:
             next_queue = []
-
-            # fetch all URLs in this level concurrently
             html_pages = await asyncio.gather(*[_fetch(session, u) for u in queue])
 
             for url, html in zip(queue, html_pages):
-                if not html: continue
+                if not html:
+                    continue
                 soup = BeautifulSoup(html, "html.parser")
 
                 for a in soup.find_all("a", href=True):
                     href = a["href"].split("#")[0]
 
-                    # normalise relative/ scheme-less URLs
+                    # normalise
                     if href.startswith("//"):
                         href = "https:" + href
                     if href.startswith("/"):
@@ -62,7 +56,7 @@ async def crawl(root: str, max_pages:int = 150, depth:int = 3):
                     if href in seen:
                         continue
 
-                    # classify link
+                    # classify
                     if PDF_REGEX.search(href):
                         pdfs.append(href)
                     elif HTML5_HINTS.search(href):
@@ -75,7 +69,7 @@ async def crawl(root: str, max_pages:int = 150, depth:int = 3):
                     if re.search(r"/partners|/resellers|/channel", href, re.I):
                         partner_portal = True
 
-                    # queue for next depth if HTML-ish link
+                    # queue for next level
                     if (not href.lower().endswith((".pdf", ".zip", ".doc", ".docx"))
                             and len(seen) < max_pages):
                         next_queue.append(href)
@@ -90,6 +84,6 @@ async def crawl(root: str, max_pages:int = 150, depth:int = 3):
         "html5_like_count": len(html5),
         "tools_detected":   sorted(tools),
         "partner_portal":   partner_portal,
-        "sample_pdfs":      pdfs[:5],
-        "sample_html5":     html5[:5]
+        "sample_pdfs":      pdfs,     # ← ALL pdf links
+        "sample_html5":     html5
     }
